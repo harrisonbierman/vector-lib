@@ -4,30 +4,34 @@
 #include <string.h>
 #include <stdio.h>
 #include <time.h>
+#include <assert.h>
 
 
 typedef struct{
 	void *array;
 	size_t length;
 	size_t capacity;
+	size_t reserve;
 	size_t data_size;
 }Vector;
 
-
-Vector vector_create(size_t data_size) 
+Vector vector_create(size_t data_size, size_t reserve_pow_2) 
 {
+	// reserve must be a power of 2
+	assert((reserve_pow_2 & (reserve_pow_2 - 1)) == 0);
+
 	Vector vec;
 	vec.length = 0;
-	vec.capacity = 1;
+	vec.reserve = reserve_pow_2;
+	vec.capacity = reserve_pow_2;
 	vec.data_size = data_size;
 	vec.array = malloc(vec.capacity * vec.data_size);
 	
 	return vec;
 }
 
-
 //need to also add an emplace function for faster pushing
-int vector_push(Vector *vec, const void *item)
+int vector_push_back(Vector *vec, const void *item)
 {
 
 	if (vec->length >= vec->capacity) 
@@ -45,60 +49,60 @@ int vector_push(Vector *vec, const void *item)
 	return 0;
 }
 
+void *vector_emplace_back(Vector *vec) 
+{
+	if (vec->length >= vec->capacity) 
+	{
+		vec->capacity *= 2;
+		void *tmp = realloc(vec->array, (vec->capacity * vec->data_size));
+		if (!tmp) return NULL; // allocation failed
+		vec->array = tmp;
+	}
 
-void* vector_get(Vector *vec, size_t index)
+	void *slot = vec->array + (vec->length * vec->data_size);
+	vec->length++;
+	return slot;
+}
+
+inline void* vector_get_idx(Vector *vec, size_t index)
 {
 	if (index >= vec->length) {
 		return NULL; // access out of bounds 
 	}
-	void *tmp = vec->array + (index * vec->data_size);
-	return tmp;
+
+	return vec->array + (index * vec->data_size);
 }
 
+inline void* vector_unsafe_get_idx(Vector *vec, size_t index)
+{
+	void *slot = vec->array + (index * vec->data_size);
+	return slot;
+}
+
+ssize_t vector_indexof(Vector *vec, void *item) 
+{
+	uint8_t *base = vec->array;
+	uint8_t *ptr = item;
+
+	size_t total_bytes = vec->length * vec->data_size;
+
+	if(ptr < base || ptr >= (base + (total_bytes))) 
+		return -1; // out of bounds
+	
+	size_t offset = ptr - base;
+
+	if(offset % vec->data_size) 
+		return -1; // data not aligned
+	return offset / vec->data_size;
+}
 
 int vector_remove_ordered(Vector *vec, size_t index) 
 {
+	// out of bounds 
+	if (index >= vec->length) return -1; 	
 
-	if (index >= vec->length)
-	{
-		return -1; // out of bounds error
-	}
-
-	
-	// uint8_t *slot = vec->array + (index * vec->data_size);
-
-	
-	/*
-	 * this is 8x slower than the next solution
-	 * b/c I call memcpy for each element instead
-	 * of shifting the whole thing down in one memcpy
-	size_t shift_count = vec->length - index + 1;
-	for (;shift_count != 0; shift_count--) 
-	{
-		uint8_t *next = slot + vec->data_size;
-		*slot = *next;
-		memcpy(slot, next, vec->data_size);
-	}
-	*/
-
-	// shift the whole end of the array at once
-	// size_t shift_amount = vec->length - index + 1;
-	/*
-	memcpy(vec->array + (index * vec->data_size), 
-			(vec->array + (index * vec->data_size)) + vec->data_size,
-			(vec->length - index + 1) * vec->data_size);
-	*/
-
-	/*
-	 * using memmove instead (safer for overlaping memory)
-	memmove(vec->array + (index * vec->data_size), 
-			(vec->array + (index * vec->data_size)) + vec->data_size,
-			(vec->length - index + 1) * vec->data_size);
-	*/
-
-	// caching a precalulated value
-	
 	void *empty_slot = vec->array + (index * vec->data_size);
+	
 	memmove(empty_slot, 
 			empty_slot + vec->data_size,
 			(vec->length - index + 1) * vec->data_size);
@@ -115,22 +119,22 @@ int vector_remove_ordered(Vector *vec, size_t index)
 
 }
 
-int vector_remove_unordered(Vector *vec, size_t index) 
+int vector_remove_idx_unordered(Vector *vec, size_t index) 
 {
 
 	if (index >= vec->length)
 	{
-		return -1; // out of bounds error
+		return -1; // out of bounds error or nothing in vector
 	}
 
-	memmove(vec->array + (index * vec->data_size),
-			(vec->array + ((vec->length - 1) * vec->data_size)),
-			 vec->data_size
-			 );
+	void *empty_slot = vec->array + (index * vec->data_size);
+	void *last_slot = vec->array + ((vec->length - 1) * vec->data_size);
+	
+	memcpy(empty_slot, last_slot, vec->data_size);
 
 	vec->length--;
 
-	if (vec->length <= vec->capacity / 2)
+	if (vec->length <= vec->capacity / 2 && vec->capacity > vec->reserve)
 	{
 		vec->capacity /= 2;
 		vec->array = realloc(vec->array, (vec->capacity * vec->data_size));
@@ -139,24 +143,37 @@ int vector_remove_unordered(Vector *vec, size_t index)
 	return 0;
 
 }
-void* vector_peek(Vector *vec)
-{
-	if (vec->length == 0) 
-	{
-		return NULL; // nothing to peak
-	}
-	void *item = vec->array + ((vec->length - 1) * vec->data_size);
-	return item;
-}
 
-int vector_pop(Vector *vec)
+int vector_remove_ptr_unordered(Vector *vec, void *item)
 {
-	if (vec->length < 1) {
-		return -1; // tried to pop empty array
-	}
+	uint8_t *base = vec->array;
+	uint8_t *empty_slot = item;
+
+	size_t total_bytes = vec->length * vec->data_size;
+
+	if(empty_slot < base || empty_slot >= (base + (total_bytes))) 
+		return -1; // out of bounds
+	
+	size_t offset = empty_slot - base;
+
+	if(offset % vec->data_size) 
+		return -1; // data not aligned
+
+	void *last_slot = vec->array + ((vec->length - 1) * vec->data_size);
+	
+	memcpy(empty_slot, last_slot, vec->data_size);
+
 	vec->length--;
+
+	if (vec->length <= vec->capacity / 2 && vec->capacity > vec->reserve)
+	{
+		vec->capacity /= 2;
+		vec->array = realloc(vec->array, (vec->capacity * vec->data_size));
+	}
+
 	return 0;
 }
+
 
 void vector_free(Vector *vec)
 {
@@ -170,55 +187,54 @@ void vector_free(Vector *vec)
 void vector_clear(Vector *vec)
 {
 	vec->length = 0;
-	vec->capacity = 1;
+	vec->capacity = vec->reserve;
 }
 
-typedef struct MyStruct {
-	int datai;
-	float dataf;
+typedef struct Person {
+	int id;
 	char *name;
-}MyStruct;
+}Person;
+
+#define vector_foreach(T, item, vec)\
+	for(size_t _i_##item = 0; _i_##item < vec.length; _i_##item++)\
+		for(T *item = (T *)vector_unsafe_get_idx(&vec, _i_##item); item; item = NULL)
+
+ssize_t Tvector_indexof(Vector *vec, void *item)
+{
+	for(size_t i = 0; i < vec->length; i++) 
+	{
+		if (vec->array + (i * vec->data_size) == item) 
+		{
+			return i;
+		}
+	}
+	return -1;
+}
 
 int main() 
 {
-	MyStruct *billy = calloc(1, sizeof *billy);
+	Vector vector_people = vector_create(sizeof (Person), 1);
 
-	Vector vec_my_struct = vector_create(sizeof *billy);
-	
+	Person *person1 = vector_emplace_back(&vector_people);
+	person1->id = 324;
+	person1->name = "Bacon";
 
-	struct timespec start, end, start_push, end_push;
-    const int runs = 1000000000;
+	Person *person2 = vector_emplace_back(&vector_people);
+	if(person2) memset(person2, 0, sizeof (Person));
 
-    clock_gettime(CLOCK_MONOTONIC, &start_push);
-
-    for (int i = 0; i < runs; i++) {
-		vector_push(&vec_my_struct, billy);
-    }
-
-    clock_gettime(CLOCK_MONOTONIC, &end_push);
-
-    // start timer
-    clock_gettime(CLOCK_MONOTONIC, &start);
-
-    // run many times
-	for (int i = 0; i < runs; i++) {
-		vector_remove_unordered(&vec_my_struct, 0);
+	Person *person3 = vector_emplace_back(&vector_people);
+	if(person3){
+		person3->id = 100;
+		person3->name = "Satan";
 	}
 
+	// vector_remove_ptr_unordered(&vector_people, person2);
 
-    // stop timer
-    clock_gettime(CLOCK_MONOTONIC, &end);
+	ssize_t index = vector_indexof(&vector_people, person1);
+	printf("The index of person3 is: %ld\n", index);
 
-	vector_free(&vec_my_struct);
+	vector_foreach(Person, person, vector_people){
+		printf("index: %zu, value: %d, name: %s\n", _i_person, person->id, person->name);
+	}
 
-    // Compute elapsed seconds
-    double elapsed = (end.tv_sec - start.tv_sec)
-                   + (end.tv_nsec - start.tv_nsec) / 1e9;
-    double elapsed_push = (end_push.tv_sec - start_push.tv_sec)
-                   + (end_push.tv_nsec - start_push.tv_nsec) / 1e9;
-    printf("Push Total: %.6f s for %d runs → %.3f ns/run\n",
-           elapsed_push, runs, (elapsed_push / runs) * 1e9);
-    printf("Total: %.6f s for %d runs → %.3f ns/run\n",
-           elapsed, runs, (elapsed / runs) * 1e9);
-    return 0;
 }
