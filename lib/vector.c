@@ -15,17 +15,19 @@ typedef struct{
 }Vector;
 
 
-Vector vector_create(size_t data_size, size_t reserve_pow_2) 
+Vector *vector_create(size_t data_size, size_t reserve_pow_2) 
 {
 	// reserve must be a power of 2
 	assert((reserve_pow_2 & (reserve_pow_2 - 1)) == 0);
 
-	Vector vec;
-	vec.length = 0;
-	vec.reserve = reserve_pow_2;
-	vec.capacity = reserve_pow_2;
-	vec.data_size = data_size;
-	vec.array = malloc(vec.capacity * vec.data_size);
+	Vector *vec = malloc(sizeof (Vector));
+	if(!vec) return NULL; // allocation failed
+	vec->length = 0;
+	vec->reserve = reserve_pow_2;
+	vec->capacity = reserve_pow_2;
+	vec->data_size = data_size;
+	vec->array = malloc(vec->capacity * vec->data_size);
+	if(!vec) return NULL; // allocation failed
 	
 	return vec;
 }
@@ -217,10 +219,7 @@ int vector_remove_ptr_unordered(Vector *vec, void *item)
 void vector_free(Vector *vec)
 {
 	free(vec->array);
-	vec->array = NULL; // avoid dangling pointer
-	vec->length = 0;
-	vec->capacity = 0;
-	vec->data_size = 0;
+	free(vec);
 }
 
 

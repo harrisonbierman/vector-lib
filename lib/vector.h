@@ -36,16 +36,18 @@ typedef struct Vector Vector;
  * @brief  Initalize a Vector.
  * @param  data_size      Size in bytes of the items to store.
  * @param  reserve_pow_2  Minimum capacity. Must be a power of 2.
- * @return  A Vector with length 0 and capacity = reserve_pow_2.
+ * @return Empty Vector on success
+ * @return NULL on allocation failure
  */
-Vector vector_create(size_t data_size, size_t reserve_pow_2);
+Vector *vector_create(size_t data_size, size_t reserve_pow_2);
 
 
 /**
  * @brief  Append an item to the end of the Vector.
  * @param  vec   Pointer to the Vector.
  * @param  item  Pointer to the Item to copy in.
- * @return 0 on success, -1 on allocation failure
+ * @return 0 on success.
+ * @return -1 on allocation failure.
  */
 int vector_push_back(Vector *vec, const void *item);
 
