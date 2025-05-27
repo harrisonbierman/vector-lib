@@ -99,7 +99,7 @@ ssize_t vector_idx_of(Vector *vec, void *item)
 	size_t offset = (ptr - base);
 
 	if(offset % vec->data_size) 
-		return -1; // data not aligned
+		return -2; // data not aligned
 	return (offset / vec->data_size);
 }
 
@@ -122,6 +122,8 @@ int vector_remove_idx_ordered(Vector *vec, size_t index)
 	{
 		vec->capacity /= 2;
 		vec->array = realloc(vec->array, (vec->capacity * vec->data_size));
+		if(!vec->array)
+			return -2; // allocation failure
 	}
 
 	return 0;
@@ -145,6 +147,8 @@ int vector_remove_idx_unordered(Vector *vec, size_t index)
 	{
 		vec->capacity /= 2;
 		vec->array = realloc(vec->array, (vec->capacity * vec->data_size));
+		if(!vec->array)
+			return -2; // allocation failure
 	}
 
 	return 0;
@@ -163,7 +167,7 @@ int vector_remove_ptr_ordered(Vector *vec, void *item)
 	size_t offset = empty_slot - base;
 
 	if(offset % vec->data_size) 
-		return -1; // data not aligned
+		return -3; // data not aligned
 	
 	size_t index = (offset / vec->data_size);
 				   
@@ -179,6 +183,8 @@ int vector_remove_ptr_ordered(Vector *vec, void *item)
 	{
 		vec->capacity /= 2;
 		vec->array = realloc(vec->array, (vec->capacity * vec->data_size));
+		if(!vec->array)
+			return -2; // allocation failure
 	}
 
 	return 0;
@@ -197,7 +203,7 @@ int vector_remove_ptr_unordered(Vector *vec, void *item)
 	size_t offset = empty_slot - base;
 
 	if(offset % vec->data_size) 
-		return -1; // data not aligned
+		return -3; // data not aligned
 
 	uint8_t *last_slot = vec->array + ((vec->length - 1) * vec->data_size);
 	
@@ -210,6 +216,8 @@ int vector_remove_ptr_unordered(Vector *vec, void *item)
 	{
 		vec->capacity /= 2;
 		vec->array = realloc(vec->array, (vec->capacity * vec->data_size));
+		if(!vec->array)
+			return -2; // allocation failure
 	}
 
 	return 0;
